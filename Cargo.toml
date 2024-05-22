@@ -1,0 +1,19 @@
+workspace = { members = ["crates/modula_sprite"] }
+[package]
+name = "modula"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+modula_core = { path = "crates/modula_core" }
+modula_render = { path = "crates/modula_render" }
+modula_sprite = { path = "crates/modula_sprite" }
+modula_asset = { path = "crates/modula_asset" }
+
+[dev-dependencies]
+winit = "0.30"
+wgpu = "0.20"
+
+[[example]]
+name = "window"
+path = "examples/window.rs"
