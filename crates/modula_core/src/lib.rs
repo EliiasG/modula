@@ -25,7 +25,7 @@ impl ScheduleBuilder {
 
     /// ## Warning
     /// be careful not to add the same system multiple times.  
-    pub fn add_system<M>(
+    pub fn add_systems<M>(
         &mut self,
         // not sure how to do without clone, but ScheduleLabels usually implement clone anyway - so should be fine
         schedule: impl ScheduleLabel + Clone,
@@ -304,7 +304,7 @@ fn default_initializer(
 
 // FIXME maybe move to some util crate instead?
 pub fn init_window_closing(schedule_builder: &mut ScheduleBuilder) {
-    schedule_builder.add_system(EventOccured, handle_window_close)
+    schedule_builder.add_systems(EventOccured, handle_window_close)
 }
 
 fn handle_window_close(mut commands: Commands, event: Res<EventRes>) {

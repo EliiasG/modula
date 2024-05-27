@@ -9,6 +9,7 @@ modula_core = { path = "crates/modula_core" }
 modula_render = { path = "crates/modula_render" }
 modula_sprite = { path = "crates/modula_sprite" }
 modula_asset = { path = "crates/modula_asset" }
+modula_texture = { path = "crates/modula_texture" }
 
 [dev-dependencies]
 winit = "0.30"

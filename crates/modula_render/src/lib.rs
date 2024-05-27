@@ -14,9 +14,11 @@ mod sequence;
 
 pub use sequence::*;
 
+/// Used to extract / sync data for drawing
 #[derive(ScheduleLabel, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct PreDraw;
 
+/// Used for drawing and updating
 #[derive(ScheduleLabel, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Draw;
 
@@ -26,12 +28,12 @@ pub struct Draw;
 struct DrawSetup;
 
 pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
-    schedule_builder.add_system(PreInit, |world: &mut World| {
+    schedule_builder.add_systems(PreInit, |world: &mut World| {
         world.try_add_schedule(Draw);
         world.try_add_schedule(PreDraw);
     });
-    schedule_builder.add_system(EventOccured, (handle_redraw_command, handle_resized));
-    schedule_builder.add_system(DrawSetup, draw_setup);
+    schedule_builder.add_systems(EventOccured, (handle_redraw_command, handle_resized));
+    schedule_builder.add_systems(DrawSetup, draw_setup);
 }
 
 fn handle_resized(
@@ -43,7 +45,7 @@ fn handle_resized(
     let surface = &surface.0;
     let surface_config = &mut surface_config.0;
     let device = &device.0;
-    //FIXME maybe handle scale factor change?
+    // TODO maybe handle scale factor change?
     let size = match &event_res.0 {
         Event::WindowEvent {
             window_id: _,
@@ -85,6 +87,7 @@ fn handle_redraw_command(world: &mut World) {
         return;
     }
     world.run_and_apply_deferred(PreDraw);
+    // FIXME maybe submit queue here because of texture loading, currently textures will only load at end of frame
     world.run_and_apply_deferred(Draw);
     // would be overkill to make a schedule, since it just removes resources and draws CommandBuffer
     draw_finish(world);
@@ -142,8 +145,9 @@ fn draw_setup(
             .create_view(&TextureViewDescriptor::default()),
     ));
     commands.insert_resource(SurfaceTextureRes(texture));
-    commands.insert_resource(CommandEncoderRes(
-        // should be fine not to have a label as it should be the only command encoder
-        device.create_command_encoder(&CommandEncoderDescriptor { label: None }),
-    ));
+    commands.insert_resource(CommandEncoderRes(device.create_command_encoder(
+        &CommandEncoderDescriptor {
+            label: Some("Primary CommandEncoder"),
+        },
+    )));
 }

@@ -7,12 +7,25 @@ pub struct Assets<T> {
     assets: Vec<Option<T>>,
 }
 
-#[derive(Clone, Copy)]
 pub struct AssetId<T: Send + Sync + 'static>(usize, PhantomData<T>);
+
+impl<T: Send + Sync + 'static> Clone for AssetId<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: Send + Sync + 'static> Copy for AssetId<T> {}
 
 impl<T: Send + Sync + 'static> Assets<T> {
     pub fn new() -> Self {
         Self { assets: Vec::new() }
+    }
+
+    /// Adds a None and returns its id, adding an asset reserves space in a vec, so calling this often will cause a memory leak
+    pub fn add_empty(&mut self) -> AssetId<T> {
+        self.assets.push(None);
+        AssetId(self.assets.len() - 1, PhantomData)
     }
 
     /// Adds an asset and returns its id, adding an asset reserves space in a vec, so calling this often will cause a memory leak
@@ -43,7 +56,7 @@ impl<T: Send + Sync + 'static> Assets<T> {
 }
 
 pub fn init_assets<T: Send + Sync + 'static>(schedule_builder: &mut ScheduleBuilder) {
-    schedule_builder.add_system(PreInit, |mut commands: Commands| {
+    schedule_builder.add_systems(PreInit, |mut commands: Commands| {
         commands.insert_resource(Assets::<T>::new());
     })
 }
