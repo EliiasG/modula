@@ -6,5 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-modula_core = {path = "../modula_core"}
+modula_core = { path = "../modula_core" }
+modula_utils = { path = "../modula_utils" }
 bevy_ecs = "0.13"

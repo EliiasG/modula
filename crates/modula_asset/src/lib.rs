@@ -1,10 +1,12 @@
 use bevy_ecs::prelude::*;
 use modula_core::{PreInit, ScheduleBuilder};
+use modula_utils::HashMap;
 use std::marker::PhantomData;
 
 #[derive(Resource)]
 pub struct Assets<T> {
-    assets: Vec<Option<T>>,
+    next: usize,
+    assets: HashMap<usize, T>,
 }
 
 pub struct AssetId<T: Send + Sync + 'static>(usize, PhantomData<T>);
@@ -19,39 +21,43 @@ impl<T: Send + Sync + 'static> Copy for AssetId<T> {}
 
 impl<T: Send + Sync + 'static> Assets<T> {
     pub fn new() -> Self {
-        Self { assets: Vec::new() }
+        Self {
+            next: 0,
+            assets: HashMap::new(),
+        }
     }
 
-    /// Adds a None and returns its id, adding an asset reserves space in a vec, so calling this often will cause a memory leak
+    /// Returns an empty [AssetId]
     pub fn add_empty(&mut self) -> AssetId<T> {
-        self.assets.push(None);
-        AssetId(self.assets.len() - 1, PhantomData)
+        self.next += 1;
+        AssetId(self.next - 1, PhantomData)
     }
 
-    /// Adds an asset and returns its id, adding an asset reserves space in a vec, so calling this often will cause a memory leak
+    /// Adds an asset and returns its id
     pub fn add(&mut self, asset: T) -> AssetId<T> {
-        self.assets.push(Some(asset));
-        AssetId(self.assets.len() - 1, PhantomData)
+        let id = self.add_empty();
+        self.replace(id, asset);
+        id
     }
 
     /// Immutably gets an asset from an id
     pub fn get(&self, asset_id: AssetId<T>) -> Option<&T> {
-        self.assets[asset_id.0].as_ref()
+        self.assets.get(&asset_id.0)
     }
 
     /// Mutably gets an asset from an id
     pub fn get_mut(&mut self, asset_id: AssetId<T>) -> Option<&mut T> {
-        self.assets[asset_id.0].as_mut()
+        self.assets.get_mut(&asset_id.0)
     }
 
     /// Puts a new value in an asset, all AssetIds pointing to the old asset will now point to the new asset
     pub fn replace(&mut self, asset_id: AssetId<T>, asset: T) -> Option<T> {
-        self.assets[asset_id.0].replace(asset)
+        self.assets.insert(asset_id.0, asset)
     }
 
     /// Removes an asset leaving None in its place, a new asset can be put in its place using replace
     pub fn remove(&mut self, asset_id: AssetId<T>) -> Option<T> {
-        self.assets[asset_id.0].take()
+        self.assets.remove(&asset_id.0)
     }
 }
 
