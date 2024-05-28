@@ -211,18 +211,12 @@ fn validate_layers(images: &Vec<MipMapImage>) -> Option<LayeredTextureError> {
     if images.is_empty() {
         return Some(LayeredTextureError::NoLayers);
     }
-    // maybe there is some smart functional way to do this? this does not feel very rusty
-    let mut first_dim = None;
-    for img in images {
-        if first_dim == None {
-            first_dim = Some(img.sizes());
-            continue;
-        }
-        if &img.sizes() != first_dim.as_ref().unwrap() {
-            return Some(LayeredTextureError::InvalidLayer);
-        }
+    let first_size = images[0].sizes();
+    if images[1..].iter().all(|img| img.sizes() == first_size) {
+        None
+    } else {
+        Some(LayeredTextureError::InvalidLayer)
     }
-    None
 }
 
 enum TextureLoadData {
