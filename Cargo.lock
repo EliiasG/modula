@@ -1412,6 +1412,7 @@ dependencies = [
  "modula_render",
  "modula_sprite",
  "modula_texture",
+ "modula_utils",
  "wgpu",
  "winit",
 ]
@@ -1460,6 +1461,13 @@ dependencies = [
  "modula_core",
  "modula_render",
  "wgpu",
+]
+
+[[package]]
+name = "modula_utils"
+version = "0.1.0"
+dependencies = [
+ "hashbrown",
 ]
 
 [[package]]
