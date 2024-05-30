@@ -1,14 +1,9 @@
-use std::iter;
-
 use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
 use modula_core::{
-    self, DeviceRes, EventOccured, EventRes, PreInit, QueueRes, ScheduleBuilder, ShuoldExit,
+    self, DeviceRes, EventOccured, EventRes, PreInit, ScheduleBuilder, ShuoldExit,
     SurfaceConfigRes, SurfaceRes, WindowRes, WorldExt,
 };
-use wgpu::{
-    CommandEncoder, CommandEncoderDescriptor, SurfaceError, SurfaceTexture, TextureView,
-    TextureViewDescriptor,
-};
+use wgpu::{SurfaceError, SurfaceTexture, TextureView, TextureViewDescriptor};
 use winit::event::{Event, WindowEvent};
 mod sequence;
 
@@ -70,9 +65,6 @@ pub struct SurfaceTextureRes(pub SurfaceTexture);
 #[derive(Resource)]
 pub struct SurfaceTextureViewRes(pub TextureView);
 
-#[derive(Resource)]
-pub struct CommandEncoderRes(pub CommandEncoder);
-
 fn handle_redraw_command(world: &mut World) {
     match world.resource::<EventRes>().0 {
         Event::WindowEvent {
@@ -89,24 +81,17 @@ fn handle_redraw_command(world: &mut World) {
     world.run_and_apply_deferred(PreDraw);
     // FIXME maybe submit queue here because of texture loading, currently textures will only load at end of frame
     world.run_and_apply_deferred(Draw);
-    // would be overkill to make a schedule, since it just removes resources and draws CommandBuffer
+    // would be overkill to make a schedule, since it just removes resources presents surface
+    sequence::run_sequences(world);
     draw_finish(world);
 }
 
 fn draw_finish(world: &mut World) {
     world.remove_resource::<SurfaceTextureViewRes>();
-    let command_encoder = world
-        .remove_resource::<CommandEncoderRes>()
-        .expect("No CommandBuffer, did you remove it, you little rascal? huh?")
-        .0;
     let surface_texture = world
         .remove_resource::<SurfaceTextureRes>()
         .expect("No SurfaceTexture, did you remove it, you little rascal? huh?")
         .0;
-    world
-        .resource_mut::<QueueRes>()
-        .0
-        .submit(iter::once(command_encoder.finish()));
     surface_texture.present();
     world.resource::<WindowRes>().0.request_redraw();
 }
@@ -145,9 +130,4 @@ fn draw_setup(
             .create_view(&TextureViewDescriptor::default()),
     ));
     commands.insert_resource(SurfaceTextureRes(texture));
-    commands.insert_resource(CommandEncoderRes(device.create_command_encoder(
-        &CommandEncoderDescriptor {
-            label: Some("Primary CommandEncoder"),
-        },
-    )));
 }

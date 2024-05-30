@@ -1443,6 +1443,7 @@ name = "modula_render"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
+ "modula_asset",
  "modula_core",
  "wgpu",
  "winit",
@@ -1468,7 +1469,10 @@ dependencies = [
 name = "modula_utils"
 version = "0.1.0"
 dependencies = [
+ "bevy_ecs",
  "hashbrown",
+ "modula_core",
+ "winit",
 ]
 
 [[package]]

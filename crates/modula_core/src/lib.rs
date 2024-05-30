@@ -242,7 +242,7 @@ fn default_initializer(
     window_attribs: WindowAttributes,
     event_loop: &ActiveEventLoop,
 ) -> GraphicsInitializerResult {
-    //env_logger::init();
+    env_logger::init();
     let instance = Instance::new(InstanceDescriptor {
         backends: Backends::all(),
         ..Default::default()
@@ -300,19 +300,4 @@ fn default_initializer(
         device,
         queue,
     };
-}
-
-// FIXME maybe move to some util crate instead?
-pub fn init_window_closing(schedule_builder: &mut ScheduleBuilder) {
-    schedule_builder.add_systems(EventOccured, handle_window_close)
-}
-
-fn handle_window_close(mut commands: Commands, event: Res<EventRes>) {
-    match event.0 {
-        WinitEvent::WindowEvent {
-            window_id: _,
-            event: WindowEvent::CloseRequested,
-        } => commands.insert_resource(ShuoldExit),
-        _ => {}
-    }
 }

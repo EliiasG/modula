@@ -66,3 +66,20 @@ pub fn init_assets<T: Send + Sync + 'static>(schedule_builder: &mut ScheduleBuil
         commands.insert_resource(Assets::<T>::new());
     })
 }
+
+/// Type that references a world and allows easy immutable access to all resources
+pub struct AssetFetcher<'a> {
+    world: &'a World,
+}
+
+impl<'a> AssetFetcher<'a> {
+    /// Make a fetcher referencing a world
+    pub fn new(world: &'a World) -> Self {
+        AssetFetcher { world: &world }
+    }
+
+    /// Get an asset from the world being referenced
+    pub fn get<T: Send + Sync + 'static>(&self, asset_id: AssetId<T>) -> Option<&'a T> {
+        self.world.get_resource::<Assets<T>>()?.get(asset_id)
+    }
+}

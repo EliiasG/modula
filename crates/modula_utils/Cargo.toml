@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 hashbrown = "0.14"
+bevy_ecs = "0.13"
+modula_core ={ path = "../modula_core" }
+winit = "0.30"
