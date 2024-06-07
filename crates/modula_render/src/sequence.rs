@@ -1,6 +1,6 @@
 use bevy_ecs::prelude::*;
-use modula_asset::{AssetFetcher, AssetId, Assets};
-use modula_core::DeviceRes;
+use modula_asset::{init_assets, AssetFetcher, AssetId, Assets};
+use modula_core::{DeviceRes, PreInit, ScheduleBuilder};
 use modula_utils::HashSet;
 use wgpu::{CommandEncoder, CommandEncoderDescriptor, Device};
 
@@ -104,7 +104,7 @@ enum InnerSequence {
 
 pub(crate) fn run_sequences(world: &mut World) {
     world.resource_scope(|world, mut sequence_assets: Mut<Assets<Sequence>>| {
-        world.resource_scope(|world, sequence_queue: Mut<SequenceQueue>| {
+        world.resource_scope(|world, mut sequence_queue: Mut<SequenceQueue>| {
             // FIXME maybe use multiple command encoders and run in parallel??
             let mut command_encoder =
                 world
@@ -119,7 +119,14 @@ pub(crate) fn run_sequences(world: &mut World) {
                     .expect("sequence was added to queue, but does not exist")
                     .run(&mut command_encoder, world)
             }
-            world.resource_mut::<SequenceQueue>().0.clear();
+            sequence_queue.0.clear();
         });
     });
+}
+
+pub(crate) fn init_sequences(schedule_builder: &mut ScheduleBuilder) {
+    schedule_builder.add_systems(PreInit, |mut commands: Commands| {
+        commands.insert_resource(SequenceQueue(Vec::new()));
+    });
+    init_assets::<Sequence>(schedule_builder);
 }

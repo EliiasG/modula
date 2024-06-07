@@ -1,4 +1,5 @@
 use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
+use modula_asset::init_assets;
 use modula_core::{
     self, DeviceRes, EventOccured, EventRes, PreInit, ScheduleBuilder, ShuoldExit,
     SurfaceConfigRes, SurfaceRes, WindowRes, WorldExt,
@@ -31,6 +32,8 @@ pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
     });
     schedule_builder.add_systems(EventOccured, (handle_redraw_command, handle_resized));
     schedule_builder.add_systems(DrawSetup, draw_setup);
+    init_sequences(schedule_builder);
+    init_assets::<RenderTarget>(schedule_builder);
 }
 
 fn handle_resized(

@@ -2,7 +2,7 @@
 
 use modula::render;
 use modula::{
-    core::{self, App, ScheduleBuilder},
+    core::{App, ScheduleBuilder},
     utils,
 };
 use winit::window::WindowAttributes;
