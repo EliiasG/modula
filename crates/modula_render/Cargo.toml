@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 modula_core = { path = "../modula_core"}
+modula_utils = { path = "../modula_utils"}
 modula_asset = { path = "../modula_asset"}
 bevy_ecs = "0.13"
 winit = "0.30"

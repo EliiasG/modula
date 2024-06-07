@@ -1,6 +1,7 @@
 use bevy_ecs::prelude::*;
 use modula_core::{PreInit, ScheduleBuilder};
 use modula_utils::HashMap;
+use std::hash::Hash;
 use std::marker::PhantomData;
 
 #[derive(Resource)]
@@ -10,6 +11,20 @@ pub struct Assets<T> {
 }
 
 pub struct AssetId<T: Send + Sync + 'static>(usize, PhantomData<T>);
+
+impl<T: Send + Sync + 'static> Hash for AssetId<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<T: Send + Sync + 'static> PartialEq for AssetId<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Send + Sync + 'static> Eq for AssetId<T> {}
 
 impl<T: Send + Sync + 'static> Clone for AssetId<T> {
     fn clone(&self) -> Self {

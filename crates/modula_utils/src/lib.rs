@@ -4,6 +4,7 @@ use modula_core::{EventOccured, EventRes, ScheduleBuilder, ShuoldExit};
 use winit::event::{Event, WindowEvent};
 
 pub type HashMap<K, V> = hashbrown::HashMap<K, V>;
+pub type HashSet<T> = hashbrown::HashSet<T>;
 
 pub fn init_window_closing(schedule_builder: &mut ScheduleBuilder) {
     schedule_builder.add_systems(EventOccured, handle_window_close)

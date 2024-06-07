@@ -5,8 +5,10 @@ use modula_core::{
 };
 use wgpu::{SurfaceError, SurfaceTexture, TextureView, TextureViewDescriptor};
 use winit::event::{Event, WindowEvent};
+mod render_target;
 mod sequence;
 
+pub use render_target::*;
 pub use sequence::*;
 
 /// Used to extract / sync data for drawing

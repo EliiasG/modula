@@ -1445,6 +1445,7 @@ dependencies = [
  "bevy_ecs",
  "modula_asset",
  "modula_core",
+ "modula_utils",
  "wgpu",
  "winit",
 ]
