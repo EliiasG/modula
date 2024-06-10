@@ -29,6 +29,9 @@ pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
     schedule_builder.add_systems(PreInit, |world: &mut World| {
         world.try_add_schedule(Draw);
         world.try_add_schedule(PreDraw);
+        world.insert_resource(SurfaceTargetRes(RenderTarget::new(
+            RenderTargetConfig::default(),
+        )));
     });
     schedule_builder.add_systems(EventOccured, (handle_redraw_command, handle_resized));
     schedule_builder.add_systems(DrawSetup, draw_setup);
@@ -65,10 +68,7 @@ fn handle_resized(
 struct ShouldDraw;
 
 #[derive(Resource)]
-pub struct SurfaceTextureRes(pub SurfaceTexture);
-
-#[derive(Resource)]
-pub struct SurfaceTextureViewRes(pub TextureView);
+pub struct SurfaceTargetRes(RenderTarget);
 
 fn handle_redraw_command(world: &mut World) {
     match world.resource::<EventRes>().0 {
@@ -92,12 +92,7 @@ fn handle_redraw_command(world: &mut World) {
 }
 
 fn draw_finish(world: &mut World) {
-    world.remove_resource::<SurfaceTextureViewRes>();
-    let surface_texture = world
-        .remove_resource::<SurfaceTextureRes>()
-        .expect("No SurfaceTexture, did you remove it, you little rascal? huh?")
-        .0;
-    surface_texture.present();
+    world.resource_mut::<SurfaceTargetRes>().0.present();
     world.resource::<WindowRes>().0.request_redraw();
 }
 
@@ -106,6 +101,7 @@ fn draw_setup(
     device: Res<DeviceRes>,
     surface: Res<SurfaceRes>,
     surface_config: Res<SurfaceConfigRes>,
+    mut surface_target: ResMut<SurfaceTargetRes>,
     window: Res<WindowRes>,
 ) {
     let device = &device.0;
@@ -115,6 +111,7 @@ fn draw_setup(
     let texture = match surface.get_current_texture() {
         Ok(t) => t,
         Err(SurfaceError::OutOfMemory) => {
+            eprintln!("Out of memory while getting surface texture");
             commands.insert_resource(ShuoldExit);
             return;
         }
@@ -128,11 +125,6 @@ fn draw_setup(
             return;
         }
     };
+    surface_target.0.apply_surface(device, texture);
     commands.insert_resource(ShouldDraw);
-    commands.insert_resource(SurfaceTextureViewRes(
-        texture
-            .texture
-            .create_view(&TextureViewDescriptor::default()),
-    ));
-    commands.insert_resource(SurfaceTextureRes(texture));
 }
