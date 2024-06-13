@@ -76,25 +76,74 @@ impl<T: Send + Sync + 'static> Assets<T> {
     }
 }
 
+#[derive(SystemSet, Hash, PartialEq, Eq, Debug, Clone, Copy)]
+pub struct InitAssetsSet;
+
 pub fn init_assets<T: Send + Sync + 'static>(schedule_builder: &mut ScheduleBuilder) {
-    schedule_builder.add_systems(PreInit, |mut commands: Commands| {
-        commands.insert_resource(Assets::<T>::new());
-    })
+    schedule_builder.add_systems(
+        PreInit,
+        (|mut commands: Commands| {
+            commands.insert_resource(Assets::<T>::new());
+        })
+        .in_set(InitAssetsSet),
+    );
 }
 
-/// Type that references a world and allows easy immutable access to all resources
-pub struct AssetFetcher<'a> {
-    world: &'a World,
+pub trait AssetWorldExt {
+    /// Adds an empty asset
+    fn add_empty_asset<T: Send + Sync + 'static>(&mut self) -> AssetId<T>;
+    /// Adds an asset and returns its id
+    fn add_asset<T: Send + Sync + 'static>(&mut self, asset: T) -> AssetId<T>;
+    /// Gets an asset from an id
+    fn get_asset<T: Send + Sync + 'static>(&self, asset_id: AssetId<T>) -> Option<&T>;
+    /// Gets an asset from an id and runs a function on it, if the asset is not found the function is not run
+    fn with_asset<T: Send + Sync + 'static, F: FnOnce(&mut T)>(
+        &mut self,
+        asset_id: AssetId<T>,
+        f: F,
+    );
+    /// Replaces an asset using [Assets::replace]
+    fn replace_asset<T: Send + Sync + 'static>(
+        &mut self,
+        asset_id: AssetId<T>,
+        asset: T,
+    ) -> Option<T>;
+    /// Removes an asset using [Assets::remove]
+    fn remove_asset<T: Send + Sync + 'static>(&mut self, asset_id: AssetId<T>) -> Option<T>;
 }
 
-impl<'a> AssetFetcher<'a> {
-    /// Make a fetcher referencing a world
-    pub fn new(world: &'a World) -> Self {
-        AssetFetcher { world: &world }
+impl AssetWorldExt for World {
+    fn add_empty_asset<T: Send + Sync + 'static>(&mut self) -> AssetId<T> {
+        self.resource_mut::<Assets<T>>().add_empty()
     }
 
-    /// Get an asset from the world being referenced
-    pub fn get<T: Send + Sync + 'static>(&self, asset_id: AssetId<T>) -> Option<&'a T> {
-        self.world.get_resource::<Assets<T>>()?.get(asset_id)
+    fn add_asset<T: Send + Sync + 'static>(&mut self, asset: T) -> AssetId<T> {
+        self.resource_mut::<Assets<T>>().add(asset)
+    }
+
+    fn get_asset<T: Send + Sync + 'static>(&self, asset_id: AssetId<T>) -> Option<&T> {
+        self.get_resource::<Assets<T>>()?.get(asset_id)
+    }
+
+    fn with_asset<T: Send + Sync + 'static, F: FnOnce(&mut T)>(
+        &mut self,
+        asset_id: AssetId<T>,
+        f: F,
+    ) {
+        self.get_resource_mut::<Assets<T>>()
+            .map(|mut assets| assets.get_mut(asset_id).map(f));
+    }
+
+    fn replace_asset<T: Send + Sync + 'static>(
+        &mut self,
+        asset_id: AssetId<T>,
+        asset: T,
+    ) -> Option<T> {
+        self.get_resource_mut::<Assets<T>>()?
+            .replace(asset_id, asset)
+    }
+
+    fn remove_asset<T: Send + Sync + 'static>(&mut self, asset_id: AssetId<T>) -> Option<T> {
+        self.get_resource_mut::<Assets<T>>()?.remove(asset_id)
     }
 }

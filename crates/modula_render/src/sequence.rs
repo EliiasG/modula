@@ -1,22 +1,26 @@
+use std::iter;
+
 use bevy_ecs::prelude::*;
-use modula_asset::{init_assets, AssetFetcher, AssetId, Assets};
-use modula_core::{DeviceRes, PreInit, ScheduleBuilder};
+use modula_asset::{init_assets, AssetId, Assets};
+use modula_core::{DeviceRes, PreInit, QueueRes, ScheduleBuilder};
 use modula_utils::HashSet;
 use wgpu::{CommandEncoder, CommandEncoderDescriptor, Device};
 
 use crate::RenderTarget;
+mod basic;
+pub use basic::*;
 
-pub trait OperationBuilder: Send + Sync {
+pub trait OperationBuilder: Send + Sync + 'static {
     /// used by the sequence to determine when to resolve
     fn reading(&self) -> Vec<AssetId<RenderTarget>>;
     /// used by the sequence to determine when to resolve
     fn writing(&self) -> Vec<AssetId<RenderTarget>>;
     /// should only be called once, does not consume self because it needs to be stored as dyn
-    fn finish(&mut self, device: &Device) -> Box<dyn Operation>;
+    fn finish(self, device: &Device) -> impl Operation + 'static;
 }
 
 pub trait Operation: Send + Sync {
-    fn run(&mut self, asset_fetcher: &AssetFetcher, command_encoder: &mut CommandEncoder);
+    fn run(&mut self, world: &mut World, command_encoder: &mut CommandEncoder);
 }
 
 pub struct Sequence {
@@ -59,7 +63,7 @@ impl Sequence {
                             .schedule_resolve();
                     }
                     SequenceOperation::Run(op) => {
-                        op.run(&AssetFetcher::new(world), command_encoder);
+                        op.run(world, command_encoder);
                     }
                 }
             }
@@ -68,7 +72,7 @@ impl Sequence {
 }
 
 pub struct SequenceBuilder {
-    operation_builders: Vec<Box<dyn OperationBuilder>>,
+    operation_builders: Vec<Box<dyn DynOperationBuilder>>,
 }
 
 impl SequenceBuilder {
@@ -78,8 +82,12 @@ impl SequenceBuilder {
         };
     }
 
-    pub fn add(&mut self, operation_builder: impl OperationBuilder + 'static) {
-        self.operation_builders.push(Box::new(operation_builder));
+    pub fn add(mut self, operation_builder: impl OperationBuilder) -> Self {
+        self.operation_builders
+            .push(Box::new(DynOperationBuilderImpl(Some(Box::new(
+                operation_builder,
+            )))));
+        self
     }
 
     pub fn finish(self, assets: &mut Assets<Sequence>) -> AssetId<Sequence> {
@@ -97,9 +105,38 @@ pub enum SequenceOperation {
 #[derive(Resource)]
 pub struct SequenceQueue(Vec<AssetId<Sequence>>);
 
+impl SequenceQueue {
+    pub fn schedule(&mut self, sequence: AssetId<Sequence>) {
+        self.0.push(sequence);
+    }
+}
+
+// to get around dyn not being able to consume self
+// maybe there is a better way to do this
+trait DynOperationBuilder: Send + Sync + 'static {
+    fn reading(&self) -> Vec<AssetId<RenderTarget>>;
+    fn writing(&self) -> Vec<AssetId<RenderTarget>>;
+    fn finish(&mut self, device: &Device) -> Box<dyn Operation>;
+}
+
+struct DynOperationBuilderImpl<T: OperationBuilder>(Option<Box<T>>);
+
+impl<T: OperationBuilder> DynOperationBuilder for DynOperationBuilderImpl<T> {
+    fn reading(&self) -> Vec<AssetId<RenderTarget>> {
+        self.0.as_ref().unwrap().reading()
+    }
+
+    fn writing(&self) -> Vec<AssetId<RenderTarget>> {
+        self.0.as_ref().unwrap().writing()
+    }
+
+    fn finish(&mut self, device: &Device) -> Box<dyn Operation> {
+        Box::new(self.0.take().unwrap().finish(device))
+    }
+}
 enum InnerSequence {
     Ready(Vec<SequenceOperation>),
-    UnInitialized(Vec<Box<dyn OperationBuilder>>),
+    UnInitialized(Vec<Box<dyn DynOperationBuilder>>),
 }
 
 pub(crate) fn run_sequences(world: &mut World) {
@@ -120,6 +157,10 @@ pub(crate) fn run_sequences(world: &mut World) {
                     .run(&mut command_encoder, world)
             }
             sequence_queue.0.clear();
+            world
+                .resource::<QueueRes>()
+                .0
+                .submit(iter::once(command_encoder.finish()));
         });
     });
 }

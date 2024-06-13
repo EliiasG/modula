@@ -1,10 +1,10 @@
 use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
-use modula_asset::init_assets;
+use modula_asset::{init_assets, AssetId, AssetWorldExt, Assets, InitAssetsSet};
 use modula_core::{
     self, DeviceRes, EventOccured, EventRes, PreInit, ScheduleBuilder, ShuoldExit,
     SurfaceConfigRes, SurfaceRes, WindowRes, WorldExt,
 };
-use wgpu::{SurfaceError, SurfaceTexture, TextureView, TextureViewDescriptor};
+use wgpu::SurfaceError;
 use winit::event::{Event, WindowEvent};
 mod render_target;
 mod sequence;
@@ -29,10 +29,16 @@ pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
     schedule_builder.add_systems(PreInit, |world: &mut World| {
         world.try_add_schedule(Draw);
         world.try_add_schedule(PreDraw);
-        world.insert_resource(SurfaceTargetRes(RenderTarget::new(
-            RenderTargetConfig::default(),
-        )));
     });
+    // maybe should be in a set, but SurfaceTargetRes should probably not be used before init anyway
+    schedule_builder.add_systems(
+        PreInit,
+        (|world: &mut World| {
+            let asset = world.add_asset(RenderTarget::new(RenderTargetConfig::default()));
+            world.insert_resource(SurfaceTargetRes(asset));
+        })
+        .after(InitAssetsSet),
+    );
     schedule_builder.add_systems(EventOccured, (handle_redraw_command, handle_resized));
     schedule_builder.add_systems(DrawSetup, draw_setup);
     init_sequences(schedule_builder);
@@ -68,7 +74,7 @@ fn handle_resized(
 struct ShouldDraw;
 
 #[derive(Resource)]
-pub struct SurfaceTargetRes(RenderTarget);
+pub struct SurfaceTargetRes(pub AssetId<RenderTarget>);
 
 fn handle_redraw_command(world: &mut World) {
     match world.resource::<EventRes>().0 {
@@ -92,7 +98,8 @@ fn handle_redraw_command(world: &mut World) {
 }
 
 fn draw_finish(world: &mut World) {
-    world.resource_mut::<SurfaceTargetRes>().0.present();
+    let surface_target = world.resource::<SurfaceTargetRes>().0;
+    world.with_asset(surface_target, |target| target.present());
     world.resource::<WindowRes>().0.request_redraw();
 }
 
@@ -101,7 +108,8 @@ fn draw_setup(
     device: Res<DeviceRes>,
     surface: Res<SurfaceRes>,
     surface_config: Res<SurfaceConfigRes>,
-    mut surface_target: ResMut<SurfaceTargetRes>,
+    surface_target: Res<SurfaceTargetRes>,
+    mut render_target_assets: ResMut<Assets<RenderTarget>>,
     window: Res<WindowRes>,
 ) {
     let device = &device.0;
@@ -125,6 +133,9 @@ fn draw_setup(
             return;
         }
     };
-    surface_target.0.apply_surface(device, texture);
+    render_target_assets
+        .get_mut(surface_target.0)
+        .expect("no render target")
+        .apply_surface(device, texture);
     commands.insert_resource(ShouldDraw);
 }

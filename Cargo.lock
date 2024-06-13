@@ -1407,6 +1407,7 @@ dependencies = [
 name = "modula"
 version = "0.0.0"
 dependencies = [
+ "bevy_ecs",
  "modula_asset",
  "modula_core",
  "modula_render",

@@ -15,6 +15,8 @@ use wgpu::{
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
+pub mod atlas;
+
 /// Systems that load textures during [PreDraw], anything that runs in [PreDraw] and needs textures should run after this
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TextureLoadSet;
@@ -76,6 +78,8 @@ impl Image {
     }
 }
 
+// FIXME maybe don't use image lib publicly, as web should maybe use a different implementation
+// or maybe make another method for web...
 impl From<DynamicImage> for Image {
     fn from(value: DynamicImage) -> Self {
         Self {
@@ -126,8 +130,6 @@ impl MipMapImage {
     }
 }
 
-// FIXME maybe don't use image lib publicly, as web should maybe use a different implementation
-// or maybe make another method for web...
 impl From<Image> for MipMapImage {
     fn from(value: Image) -> Self {
         Self {
