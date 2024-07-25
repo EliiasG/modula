@@ -11,7 +11,7 @@ use modula_asset::{AssetId, Assets};
 use modula_core::{DeviceRes, PreInit, QueueRes, ScheduleBuilder};
 use modula_render::PreDraw;
 use wgpu::{
-    Extent3d, ImageCopyTexture, ImageDataLayout, Origin3d, Texture, TextureAspect,
+    Device, Extent3d, ImageCopyTexture, ImageDataLayout, Origin3d, Queue, Texture, TextureAspect,
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 
@@ -59,7 +59,8 @@ impl From<ImageError> for ImageLoadError {
     }
 }
 
-/// Actual representation of image data, not a GPU resource
+/// Actual representation of image data, not a GPU resource.  
+/// This is mostly used as a layer between image files and [Textures](Texture)
 #[derive(Clone)]
 pub struct Image {
     pub data: Vec<u8>,
@@ -148,34 +149,42 @@ pub enum LayeredTextureError {
 /// used to put textures in assets, if the goal is to just load a texture consider [TextureQueue]
 #[derive(Resource)]
 pub struct TextureQueue {
-    queue: Vec<TextureLoadInfo>,
+    queue: Vec<TextureOperation>,
 }
 
 impl TextureQueue {
-    /// writes a 2d texture to the given asset
-    pub fn write(&mut self, image: impl Into<MipMapImage>, asset_id: AssetId<Texture>) {
-        self.queue.push(TextureLoadInfo {
-            data: TextureLoadData::Flat(image.into()),
-            asset_id,
-        });
+    // inits a texture on the given asset, discards the current texture if it already exists
+    pub fn init(
+        &mut self,
+        asset_id: AssetId<Texture>,
+        size: (u32, u32),
+        usage: TextureUsages,
+        mip_count: u32,
+        layers: Option<u32>,
+    ) {
+        self.queue
+            .push(TextureOperation::InitTexture(TextureInitInfo {
+                asset_id,
+                size,
+                usage,
+                mip_count,
+                layers,
+            }));
     }
 
-    // writes a layered / 3d texture to the given asset
-    pub fn write_layered(
+    /// writes a 2d image to the texture at the given asset, if it does not exist a panic will occur
+    pub fn write(
         &mut self,
-        layers: Vec<impl Into<MipMapImage>>,
+        image: impl Into<MipMapImage>,
         asset_id: AssetId<Texture>,
-    ) -> Result<(), LayeredTextureError> {
-        let layers = layers.into_iter().map(|img| img.into()).collect();
-        if let Some(err) = validate_layers(&layers) {
-            return Err(err);
-        }
-        self.queue.push(TextureLoadInfo {
-            //map from generic into to concrete MipMapImage
-            data: TextureLoadData::Layered(layers),
-            asset_id,
-        });
-        Ok(())
+        origin: Origin3d,
+    ) {
+        self.queue
+            .push(TextureOperation::WriteTexture(TextureWriteInfo {
+                image: image.into(),
+                asset_id,
+                origin,
+            }));
     }
 }
 
@@ -188,8 +197,16 @@ pub struct TextureLoader<'w> {
 impl TextureLoader<'_> {
     /// loads a texture
     pub fn load_texture(&mut self, image: impl Into<MipMapImage>) -> AssetId<Texture> {
+        let image = image.into();
         let asset_id = self.texture_assets.add_empty();
-        self.texture_queue.write(image, asset_id);
+        self.texture_queue.init(
+            asset_id,
+            image.sizes()[0],
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            1,
+            None,
+        );
+        self.texture_queue.write(image, asset_id, Origin3d::ZERO);
         asset_id
     }
 
@@ -203,8 +220,24 @@ impl TextureLoader<'_> {
             return Err(err);
         }
         let asset_id = self.texture_assets.add_empty();
-        // should never give error, because layers is already checked
-        self.texture_queue.write_layered(layers, asset_id)?;
+        self.texture_queue.init(
+            asset_id,
+            layers[0].sizes()[0],
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            layers.len() as u32,
+            Some(layers.len() as u32),
+        );
+        for (layer, mip_image) in layers.into_iter().enumerate() {
+            self.texture_queue.write(
+                mip_image,
+                asset_id,
+                Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer as u32,
+                },
+            );
+        }
         Ok(asset_id)
     }
 }
@@ -221,14 +254,23 @@ fn validate_layers(images: &Vec<MipMapImage>) -> Option<LayeredTextureError> {
     }
 }
 
-enum TextureLoadData {
-    Flat(MipMapImage),
-    Layered(Vec<MipMapImage>),
+enum TextureOperation {
+    WriteTexture(TextureWriteInfo),
+    InitTexture(TextureInitInfo),
 }
 
-struct TextureLoadInfo {
-    data: TextureLoadData,
+struct TextureWriteInfo {
+    image: MipMapImage,
     asset_id: AssetId<Texture>,
+    origin: Origin3d,
+}
+
+struct TextureInitInfo {
+    asset_id: AssetId<Texture>,
+    size: (u32, u32),
+    usage: TextureUsages,
+    mip_count: u32,
+    layers: Option<u32>,
 }
 
 fn load_textures(
@@ -237,60 +279,56 @@ fn load_textures(
     device: Res<DeviceRes>,
     queue: Res<QueueRes>,
 ) {
-    for TextureLoadInfo { data, asset_id } in texture_queue.queue.drain(..) {
-        // WTF
-        let (first, depth, dimension) = match &data {
-            TextureLoadData::Flat(img) => (img, 1, TextureDimension::D2),
-            TextureLoadData::Layered(imgs) => (&imgs[0], imgs.len() as u32, TextureDimension::D3),
-        };
-
-        let img = &first.levels[0];
-
-        let size = Extent3d {
-            width: img.width,
-            height: img.height,
-            depth_or_array_layers: depth,
-        };
-
-        let texture = device.0.create_texture(&TextureDescriptor {
-            label: None,
-            size,
-            mip_level_count: first.level_count() as u32,
-            sample_count: 1,
-            dimension,
-            format: TextureFormat::Rgba8UnormSrgb,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        // amazing
-        for (layer, mip_image) in match data {
-            TextureLoadData::Flat(tex) => vec![tex].into_iter(),
-            TextureLoadData::Layered(textures) => textures.into_iter(),
-        }
-        .enumerate()
-        {
-            for (mip_level, image) in mip_image.levels.into_iter().enumerate() {
-                queue.0.write_texture(
-                    ImageCopyTexture {
-                        texture: &texture,
-                        mip_level: mip_level as u32,
-                        origin: Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: layer as u32,
-                        },
-                        aspect: TextureAspect::All,
-                    },
-                    &image.data,
-                    ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * image.width),
-                        rows_per_image: Some(image.height),
-                    },
-                    size,
-                );
+    for op in texture_queue.queue.drain(..) {
+        match op {
+            TextureOperation::InitTexture(info) => {
+                init_texture(info, &mut texture_assets, &device.0)
             }
+            TextureOperation::WriteTexture(info) => write_texture(info, &texture_assets, &queue.0),
         }
-        texture_assets.replace(asset_id, texture);
     }
+}
+
+fn write_texture(info: TextureWriteInfo, texture_assets: &Assets<Texture>, queue: &Queue) {
+    for (mip_level, image) in info.image.levels.into_iter().enumerate() {
+        queue.write_texture(
+            ImageCopyTexture {
+                texture: texture_assets.get(info.asset_id).unwrap(),
+                mip_level: mip_level as u32,
+                origin: info.origin,
+                aspect: TextureAspect::All,
+            },
+            &image.data,
+            ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * image.width),
+                rows_per_image: Some(image.height),
+            },
+            Extent3d {
+                width: image.width,
+                height: image.height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+}
+
+fn init_texture(info: TextureInitInfo, texture_assets: &mut Assets<Texture>, device: &Device) {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: None,
+        size: Extent3d {
+            width: info.size.0,
+            height: info.size.1,
+            depth_or_array_layers: info.layers.unwrap_or(1),
+        },
+        mip_level_count: info.mip_count as u32,
+        sample_count: 1,
+        dimension: info
+            .layers
+            .map_or(TextureDimension::D2, |_| TextureDimension::D3),
+        format: TextureFormat::Rgba8UnormSrgb,
+        usage: info.usage,
+        view_formats: &[],
+    });
+    texture_assets.replace(info.asset_id, texture);
 }

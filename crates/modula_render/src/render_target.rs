@@ -43,10 +43,13 @@ impl Default for RenderTargetMultisampleConfig {
 
 #[derive(Clone, PartialEq)]
 pub struct RenderTargetColorConfig {
+    // TODO maybe move multisample config to here, as it is only allowed when color is used
     /// The clear color of the render target
     pub clear_color: Color,
     /// The usages of the main texture, [RENDER_ATTACHMENT](TextureUsages::RENDER_ATTACHMENT) always set
     pub usages: TextureUsages,
+    /// The format of the color texture
+    pub format: TextureFormat,
 }
 
 impl Default for RenderTargetColorConfig {
@@ -55,6 +58,7 @@ impl Default for RenderTargetColorConfig {
         RenderTargetColorConfig {
             clear_color: Color::BLACK,
             usages: TextureUsages::RENDER_ATTACHMENT,
+            format: TextureFormat::Rgba8UnormSrgb,
         }
     }
 }
@@ -343,7 +347,8 @@ impl RenderTarget {
 
             // funky map abuse
             self.main_texture = self.current_config().color_config.as_ref().map(|c| {
-                desc.usage = c.usages;
+                desc.usage = c.usages | TextureUsages::RENDER_ATTACHMENT;
+                desc.format = c.format;
                 TextureWithView::from_texture(device.create_texture(&desc))
             });
         }
@@ -351,6 +356,8 @@ impl RenderTarget {
         if changes.multisample_changed {
             self.multisampled_texture =
                 self.current_config().multisample_config.as_ref().map(|c| {
+                    // format left same as color
+                    desc.usage = TextureUsages::RENDER_ATTACHMENT;
                     desc.sample_count = c.sample_count;
                     TextureWithView::from_texture(device.create_texture(&desc))
                 });
@@ -364,7 +371,7 @@ impl RenderTarget {
                     .map(|c| {
                         // threading the needle with those side effects
                         desc.sample_count = 1;
-                        desc.usage = c.usages;
+                        desc.usage = c.usages | TextureUsages::RENDER_ATTACHMENT;
                         desc.format = c.format;
                         TextureWithView::from_texture(device.create_texture(&desc))
                     });

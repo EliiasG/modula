@@ -102,6 +102,12 @@ pub trait AssetWorldExt {
         asset_id: AssetId<T>,
         f: F,
     );
+    /// Like [with_asset] but also gives access to the world, this is done by removing the asset and adding it back in the end
+    fn asset_scope<T: Send + Sync + 'static, F: FnOnce(&mut Self, &mut T)>(
+        &mut self,
+        asset_id: AssetId<T>,
+        f: F,
+    );
     /// Replaces an asset using [Assets::replace]
     fn replace_asset<T: Send + Sync + 'static>(
         &mut self,
@@ -132,6 +138,19 @@ impl AssetWorldExt for World {
     ) {
         self.get_resource_mut::<Assets<T>>()
             .map(|mut assets| assets.get_mut(asset_id).map(f));
+    }
+
+    fn asset_scope<T: Send + Sync + 'static, F: FnOnce(&mut Self, &mut T)>(
+        &mut self,
+        asset_id: AssetId<T>,
+        f: F,
+    ) {
+        let mut assset = match self.remove_asset(asset_id) {
+            Some(a) => a,
+            None => return,
+        };
+        f(self, &mut assset);
+        self.add_asset(assset);
     }
 
     fn replace_asset<T: Send + Sync + 'static>(

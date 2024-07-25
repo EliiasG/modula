@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 modula_core = { path = "../modula_core" }
 modula_utils = { path = "../modula_utils" }
-bevy_ecs = "0.13"
+bevy_ecs = "0.14"

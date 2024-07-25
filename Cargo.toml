@@ -15,7 +15,7 @@ modula_utils = { path = "crates/modula_utils" }
 [dev-dependencies]
 winit = "0.30"
 wgpu = "0.20"
-bevy_ecs = "0.13"
+bevy_ecs = "0.14"
 
 [[example]]
 name = "window"

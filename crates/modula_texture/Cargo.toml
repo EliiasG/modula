@@ -11,4 +11,4 @@ modula_asset = { path = "../modula_asset" }
 modula_render = { path = "../modula_render" }
 wgpu = "0.20"
 image = "0.25"
-bevy_ecs = "0.13"
+bevy_ecs = "0.14"

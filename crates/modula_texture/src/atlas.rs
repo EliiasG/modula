@@ -1,9 +1,24 @@
 use modula_asset::AssetId;
-use wgpu::Texture;
+use wgpu::{BindGroup, Sampler, TextureView};
 
 pub struct Atlas {
-    pub texture: AssetId<Texture>,
-    pub sub_textures: Vec<SubTexture>,
+    bind_group: BindGroup,
+    sprite_count: u32,
+    size: (u32, u32, u32),
+}
+
+impl Atlas {
+    pub fn bind_group(&self) -> &BindGroup {
+        todo!()
+    }
+
+    pub fn sprite_count(&self) -> u32 {
+        todo!()
+    }
+
+    pub fn size(&self) -> (u32, u32, u32) {
+        todo!()
+    }
 }
 
 /// A subsection of a texture atlas.

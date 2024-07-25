@@ -9,6 +9,6 @@ edition = "2021"
 modula_core = { path = "../modula_core"}
 modula_utils = { path = "../modula_utils"}
 modula_asset = { path = "../modula_asset"}
-bevy_ecs = "0.13"
+bevy_ecs = "0.14"
 winit = "0.30"
 wgpu = "0.20"

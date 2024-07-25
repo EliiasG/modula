@@ -6,3 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+modula_core = { path = "../modula_core" }
+modula_render = { path = "../modula_render" }
+modula_asset = { path = "../modula_asset" }
+modula_texture = { path = "../modula_texture" }
+bevy_ecs = "0.14"
+wgpu = "0.20"
