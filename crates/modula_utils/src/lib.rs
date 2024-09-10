@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Add, Div, Range};
 
 use bevy_ecs::prelude::*;
 pub use hashbrown;
@@ -25,8 +25,9 @@ fn handle_window_close(mut commands: Commands, event: Res<EventRes>) {
 /// Binary searches between lower and upper, returning the lowest value giving ok, if all values give error, the error returned by the end of the range is returned
 pub fn binsearch<T, E>(
     mut f: impl FnMut(i32) -> Result<T, E>,
-    mut range: Range<i32>,
+    range: impl Into<Range<i32>>,
 ) -> Result<T, E> {
+    let mut range = range.into();
     if range.is_empty() {
         panic!("binsearch on empty range");
     }
@@ -41,4 +42,20 @@ pub fn binsearch<T, E>(
         }
     }
     res.unwrap()
+}
+
+/// Binary searches from start and up, returning the lowest value giving ok, if all values give error, the error returned by the end of the range is returned
+pub fn binsearch_upwards<T, E>(mut f: impl FnMut(i32) -> Result<T, E>, start: i32) -> Result<T, E> {
+    let mut i = 1;
+    loop {
+        let res = f(start + i - 1);
+        if res.is_ok() {
+            break;
+        }
+        i *= 2;
+        if i == i32::MAX {
+            return res;
+        }
+    }
+    binsearch(f, (start + i / 4..start + i / 2))
 }

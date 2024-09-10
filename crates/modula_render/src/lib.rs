@@ -1,7 +1,7 @@
 use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
 use modula_asset::{init_assets, AssetId, AssetWorldExt, Assets, InitAssetsSet};
 use modula_core::{
-    self, DeviceRes, EventOccured, EventRes, PreInit, ScheduleBuilder, ShuoldExit,
+    self, DeviceRes, EventOccurred, EventRes, PreInit, ScheduleBuilder, ShuoldExit,
     SurfaceConfigRes, SurfaceRes, WindowRes, WorldExt,
 };
 use wgpu::SurfaceError;
@@ -25,6 +25,10 @@ pub struct Draw;
 #[derive(ScheduleLabel, Clone, Hash, PartialEq, Eq, Debug)]
 struct DrawSetup;
 
+/// Runs in EventOccurred to do rendering and run Draw and PreDraw
+#[derive(SystemSet, Clone, Hash, PartialEq, Eq, Debug)]
+pub struct RenderSystemSet;
+
 pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
     schedule_builder.add_systems(PreInit, |world: &mut World| {
         world.try_add_schedule(Draw);
@@ -39,7 +43,10 @@ pub fn init_render(schedule_builder: &mut ScheduleBuilder) {
         })
         .after(InitAssetsSet),
     );
-    schedule_builder.add_systems(EventOccured, (handle_redraw_command, handle_resized));
+    schedule_builder.add_systems(
+        EventOccurred,
+        (handle_redraw_event, handle_resized).in_set(RenderSystemSet),
+    );
     schedule_builder.add_systems(DrawSetup, draw_setup);
     init_sequences(schedule_builder);
     init_assets::<RenderTarget>(schedule_builder);
@@ -76,7 +83,7 @@ struct ShouldDraw;
 #[derive(Resource)]
 pub struct SurfaceTargetRes(pub AssetId<RenderTarget>);
 
-fn handle_redraw_command(world: &mut World) {
+fn handle_redraw_event(world: &mut World) {
     match world.resource::<EventRes>().0 {
         Event::WindowEvent {
             window_id: _,

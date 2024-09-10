@@ -1,8 +1,11 @@
+// TODO Handle mipmapping
+
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
     io,
     path::Path,
+    slice,
 };
 
 use bevy_ecs::{prelude::*, system::SystemParam};
@@ -77,6 +80,10 @@ impl Image {
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, ImageLoadError> {
         Ok(Reader::open(path)?.decode()?.into())
     }
+
+    pub fn to_mipmap(self, level_count: usize) -> MipMapImage {
+        MipMapImage::from_level(self, level_count)
+    }
 }
 
 // FIXME maybe don't use image lib publicly, as web should maybe use a different implementation
@@ -93,49 +100,94 @@ impl From<DynamicImage> for Image {
 
 /// A collection of [Images](Image) to be used for mipmap layers
 #[derive(Clone)]
-pub struct MipMapImage {
-    levels: Vec<Image>,
+pub enum MipMapImage {
+    /// All layers of the MipMapImage are described
+    WithImages(Vec<Image>),
+    /// Only the first level is provided, and the engine is left to generate the rest
+    FromLevel(Image, usize),
 }
 
 impl MipMapImage {
     /// Makes a new [MipMapImage] from its layers
+    /// This means that all levels are provided, use [from_level](MipMapImage::from_level) to have the engine automatically generate levels
     /// ## Panics
     /// If levels is empty
-    pub fn new(levels: Vec<Image>) -> Self {
+    pub fn with_images(levels: Vec<Image>) -> Self {
         if levels.is_empty() {
             panic!("levels may not be empty");
         }
-        Self { levels }
+        Self::WithImages(levels)
+    }
+
+    pub fn from_level(base: Image, level: usize) -> Self {
+        if level == 0 {
+            panic!("MipMapImage must not have 0 levels!")
+        }
+        Self::FromLevel(base, level)
     }
 
     #[inline]
     pub fn level_count(&self) -> usize {
-        self.levels.len()
+        match self {
+            MipMapImage::WithImages(img) => img.len(),
+            MipMapImage::FromLevel(_, c) => *c,
+        }
     }
 
+    /// If called on [FromLevel](MipMapImage::FromLevel) will only return the base image
     #[inline]
     pub fn levels(&self) -> &[Image] {
-        &self.levels
+        match self {
+            MipMapImage::WithImages(levels) => levels,
+            MipMapImage::FromLevel(img, _) => slice::from_ref(img),
+        }
     }
 
     #[inline]
     pub fn to_levels(self) -> Vec<Image> {
-        self.levels
+        match self {
+            MipMapImage::WithImages(levels) => levels,
+            MipMapImage::FromLevel(level, _) => vec![level],
+        }
     }
 
+    /// If called on [FromLevel](MipMapImage::FromLevel) will only return the base image size
     pub fn sizes(&self) -> Vec<(u32, u32)> {
-        self.levels
+        self.levels()
             .iter()
             .map(|img| (img.width, img.height))
             .collect()
+    }
+
+    /// Directly writes to a texture, for most cases [TextureLoader] or [TextureQueue] should be sufficient
+    pub fn write_to_texture(&self, queue: &Queue, origin: Origin3d, texture: &Texture) {
+        for (mip_level, image) in self.levels().into_iter().enumerate() {
+            queue.write_texture(
+                ImageCopyTexture {
+                    texture,
+                    origin,
+                    mip_level: mip_level as u32,
+                    aspect: TextureAspect::All,
+                },
+                &image.data,
+                ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * image.width),
+                    rows_per_image: Some(image.height),
+                },
+                Extent3d {
+                    width: image.width,
+                    height: image.height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
     }
 }
 
 impl From<Image> for MipMapImage {
     fn from(value: Image) -> Self {
-        Self {
-            levels: vec![value],
-        }
+        Self::from_level(value, 1)
     }
 }
 
@@ -146,14 +198,14 @@ pub enum LayeredTextureError {
     InvalidLayer,
 }
 
-/// used to put textures in assets, if the goal is to just load a texture consider [TextureQueue]
+/// used to put textures in assets, if the goal is to just load a texture consider [TextureLoader]
 #[derive(Resource)]
 pub struct TextureQueue {
     queue: Vec<TextureOperation>,
 }
 
 impl TextureQueue {
-    // inits a texture on the given asset, discards the current texture if it already exists
+    /// inits a texture on the given asset, discards the current texture if it already exists
     pub fn init(
         &mut self,
         asset_id: AssetId<Texture>,
@@ -290,27 +342,11 @@ fn load_textures(
 }
 
 fn write_texture(info: TextureWriteInfo, texture_assets: &Assets<Texture>, queue: &Queue) {
-    for (mip_level, image) in info.image.levels.into_iter().enumerate() {
-        queue.write_texture(
-            ImageCopyTexture {
-                texture: texture_assets.get(info.asset_id).unwrap(),
-                mip_level: mip_level as u32,
-                origin: info.origin,
-                aspect: TextureAspect::All,
-            },
-            &image.data,
-            ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * image.width),
-                rows_per_image: Some(image.height),
-            },
-            Extent3d {
-                width: image.width,
-                height: image.height,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
+    info.image.write_to_texture(
+        queue,
+        info.origin,
+        texture_assets.get(info.asset_id).unwrap(),
+    );
 }
 
 fn init_texture(info: TextureInitInfo, texture_assets: &mut Assets<Texture>, device: &Device) {
@@ -323,9 +359,7 @@ fn init_texture(info: TextureInitInfo, texture_assets: &mut Assets<Texture>, dev
         },
         mip_level_count: info.mip_count as u32,
         sample_count: 1,
-        dimension: info
-            .layers
-            .map_or(TextureDimension::D2, |_| TextureDimension::D3),
+        dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8UnormSrgb,
         usage: info.usage,
         view_formats: &[],

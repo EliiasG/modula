@@ -65,6 +65,7 @@ pub struct DeviceRes(pub Device);
 #[derive(Resource)]
 pub struct QueueRes(pub Queue);
 
+/// Exists in the world when EventOccurred is ran, with the current window event
 #[derive(Resource)]
 pub struct EventRes(pub WinitEvent<()>);
 
@@ -92,7 +93,7 @@ pub struct Init;
 
 /// Runs when there is a window event, event is placed in the [`EventRes`] resource
 #[derive(ScheduleLabel, Clone, Hash, PartialEq, Eq, Debug)]
-pub struct EventOccured;
+pub struct EventOccurred;
 
 pub struct App {
     pub schedule_builder: ScheduleBuilder,
@@ -123,7 +124,7 @@ impl<
             return;
         }
         self.world.insert_resource(EventRes(event));
-        self.world.run_and_apply_deferred(EventOccured);
+        self.world.run_and_apply_deferred(EventOccurred);
 
         if self.world.contains_resource::<ShuoldExit>() {
             event_loop.exit();
@@ -211,7 +212,7 @@ impl App {
         let mut world = self.schedule_builder.finish();
         world.try_add_schedule(PreInit);
         world.try_add_schedule(Init);
-        world.try_add_schedule(EventOccured);
+        world.try_add_schedule(EventOccurred);
         world.run_and_apply_deferred(PreInit);
         let event_loop = EventLoop::new().expect("Failed to make event loop");
         event_loop
@@ -263,15 +264,9 @@ fn default_initializer(
     }))
     .expect("no adapter?");
 
-    let (device, queue) = pollster::block_on(adapter.request_device(
-        &DeviceDescriptor {
-            label: None,
-            required_features: Features::default(),
-            required_limits: Limits::default(),
-        },
-        None,
-    ))
-    .expect("no device?");
+    let (device, queue) =
+        pollster::block_on(adapter.request_device(&DeviceDescriptor::default(), None))
+            .expect("no device?");
     let caps = surface.get_capabilities(&adapter);
     let size = window.inner_size();
     let surface_config = SurfaceConfiguration {

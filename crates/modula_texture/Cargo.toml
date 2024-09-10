@@ -9,6 +9,8 @@ edition = "2021"
 modula_core = { path = "../modula_core" }
 modula_asset = { path = "../modula_asset" }
 modula_render = { path = "../modula_render" }
-wgpu = "0.20"
+modula_utils = { path = "../modula_utils" }
+wgpu = "22.1"
 image = "0.25"
 bevy_ecs = "0.14"
+rectangle-pack = "0.4.2"
