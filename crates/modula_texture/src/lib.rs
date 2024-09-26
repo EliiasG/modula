@@ -9,7 +9,7 @@ use std::{
 };
 
 use bevy_ecs::{prelude::*, system::SystemParam};
-use image::{io::Reader, DynamicImage, ImageError};
+use image::{DynamicImage, ImageError, ImageReader};
 use modula_asset::{AssetId, Assets};
 use modula_core::{DeviceRes, PreInit, QueueRes, ScheduleBuilder};
 use modula_render::PreDraw;
@@ -78,7 +78,7 @@ impl Image {
     }
     /// Load from file
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, ImageLoadError> {
-        Ok(Reader::open(path)?.decode()?.into())
+        Ok(ImageReader::open(path)?.decode()?.into())
     }
 
     pub fn to_mipmap(self, level_count: usize) -> MipMapImage {

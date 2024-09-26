@@ -1,11 +1,14 @@
 use core::fmt::Debug;
+use std::{cmp::min, usize};
 
 use bevy_ecs::system::{Res, ResMut, Resource};
 use modula_asset::{AssetId, Assets};
 use modula_core::{DeviceRes, QueueRes, ScheduleBuilder};
 use modula_render::PreDraw;
 use wgpu::{
-    Device, Extent3d, Origin3d, Queue, Texture, TextureDescriptor, TextureFormat, TextureUsages,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, Device, Extent3d, Origin3d, Queue, ShaderStages, Texture, TextureAspect,
+    TextureDescriptor, TextureFormat, TextureUsages, TextureViewDescriptor,
 };
 
 use crate::MipMapImage;
@@ -34,19 +37,20 @@ pub struct Atlas {
 }
 
 impl Atlas {
+    /// Used to manually create an atlas, for high level uses [AtlasGroup]s and the [AtlasGroupQueue] are usually preferred
     pub fn new(texture: Texture, layout: AtlasLayout) -> Self {
         Self { texture, layout }
     }
 
+    #[inline]
     pub fn texture(&self) -> &Texture {
         &self.texture
     }
 
+    #[inline]
     pub fn layout(&self) -> &AtlasLayout {
         &self.layout
     }
-
-    // TODO bind group perhaps???
 }
 
 /// Layout of the atlas
@@ -66,41 +70,140 @@ pub struct SubTexture {
 pub struct AtlasGroup {
     atlases: Vec<Atlas>,
     entry_map: Vec<(usize, usize)>,
+    bind_groups: Vec<BindGroup>,
 }
 
 impl AtlasGroup {
-    pub fn new(atlases: Vec<Atlas>) -> Self {
-        let mut entry_map = Vec::new();
-        for (i, atlas) in atlases.iter().enumerate() {
-            let mut r = (0..atlas.layout.0.len()).map(|j| (i, j)).collect();
-            entry_map.append(&mut r);
-        }
+    /// Creates an [AtlasGroup] from a vec of [Atlases](Atlas), needs Device and layout to create [BindGroup]
+    pub fn new(
+        atlases: Vec<Atlas>,
+        entry_map: Vec<(usize, usize)>,
+        device: &Device,
+        layout: &AtlasGroupBindGroupLayout,
+    ) -> Self {
+        let view_desc = TextureViewDescriptor {
+            label: Some("AtlasGroup TextureView"),
+            format: None,
+            dimension: None,
+            aspect: TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        };
+
+        let views: Vec<_> = atlases
+            .iter()
+            .map(|tex| tex.texture.create_view(&view_desc))
+            .collect();
+
+        // Iterate where i = (0..atlas count/atlases per BG)
+        // and binding = (0..atlases per BG)
+        // then choose the right view
+        // BIG MESS
+        let bind_groups = (0..atlases.len().div_ceil(layout.atlas_count()))
+            .map(|i| {
+                let entries = (0..layout.atlas_count())
+                    .map(|binding| {
+                        let view_idx = min(binding + i * layout.atlas_count(), atlases.len());
+                        BindGroupEntry {
+                            binding: binding as u32,
+                            resource: wgpu::BindingResource::TextureView(&views[view_idx]),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("AtlasGroup BindGroup"),
+                    layout: layout.layout(),
+                    entries: &entries,
+                })
+            })
+            .collect();
         AtlasGroup {
-            atlases: atlases,
-            entry_map: entry_map,
+            atlases,
+            entry_map,
+            bind_groups,
         }
     }
 
+    #[inline]
     pub fn atlas_count(&self) -> usize {
         self.atlases.len()
     }
 
+    #[inline]
     pub fn atlases(&self) -> &[Atlas] {
         &self.atlases
     }
-    /// used to map [AtlasGroupEntries](AtlasGroupEntry) to (atlas (index), subtexture (index))
+
+    /// Used to map [AtlasGroupEntries](AtlasGroupEntry) to (atlas (index), subtexture (index))
+    #[inline]
     pub fn entry_map(&self) -> &[(usize, usize)] {
         &self.entry_map
+    }
+
+    /// Bind groups with atlases
+    #[inline]
+    pub fn bind_groups(&self) -> &[BindGroup] {
+        &self.bind_groups
     }
 }
 
 /// An entry into an [AtlasGroup]
+#[derive(Clone, Copy)]
 pub struct AtlasGroupEntry(usize);
 
 impl AtlasGroupEntry {
-    /// index in the [entry_map](AtlasGroup::entry_map) of its [AtlasGroup]
+    /// Index in the [entry_map](AtlasGroup::entry_map) of its [AtlasGroup]
     pub fn index(&self) -> usize {
         self.0
+    }
+
+    /// Creates an [AtlasGroupEntry] from an index, this should only be used when manually making [AtlasGroups](AtlasGroup), as [AtlasGroupBuilder] will return [AtlasGroupEntries](AtlasGroupEntry)
+    pub fn from_index(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+/// Used as a singleton for the layout of an [AtlasGroup]'s bind group
+#[derive(Resource)]
+pub struct AtlasGroupBindGroupLayout {
+    layout: BindGroupLayout,
+    atlas_count: usize,
+}
+
+impl AtlasGroupBindGroupLayout {
+    pub fn new(device: &Device) -> Self {
+        let atlas_count = device.limits().max_sampled_textures_per_shader_stage as usize;
+        let entries = (0..atlas_count)
+            .map(|_| BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            })
+            .collect::<Vec<_>>();
+        let desc = BindGroupLayoutDescriptor {
+            label: Some("AtlasGroupBindGroupLayout"),
+            entries: &entries,
+        };
+        Self {
+            layout: device.create_bind_group_layout(&desc),
+            atlas_count,
+        }
+    }
+
+    pub fn layout(&self) -> &BindGroupLayout {
+        &self.layout
+    }
+
+    pub fn atlas_count(&self) -> usize {
+        self.atlas_count
     }
 }
 
@@ -126,10 +229,10 @@ impl AtlasGroupBuilder {
     }
 
     /// If image has 1 mipmap level, it will be drawn to the first mip level.  
-    /// Otherwise it should match the mip levels of the [AtlasGroupDesciptor]
+    /// Otherwise it should match the mip levels of the [AtlasGroupBuilder]
     pub fn add_image(&mut self, img: impl Into<MipMapImage>) -> AtlasGroupEntry {
         self.images.push(img.into());
-        AtlasGroupEntry(self.images.len() - 1)
+        AtlasGroupEntry::from_index(self.images.len() - 1)
     }
 
     #[inline]
@@ -139,7 +242,7 @@ impl AtlasGroupBuilder {
 
     /// Returns the sizes of the elements, useful for layouting
     pub fn sizes(&self) -> Vec<(u32, u32)> {
-        self.images.iter().map(|e| e.sizes()[0]).collect()
+        self.images.iter().map(|img| img.sizes()[0]).collect()
     }
 
     /// Builds an atlas, for basic cases use [AtlasGroupQueue]
@@ -147,6 +250,7 @@ impl AtlasGroupBuilder {
         &self,
         device: &Device,
         queue: &Queue,
+        bind_layout: &AtlasGroupBindGroupLayout,
     ) -> Result<AtlasGroup, L::Error> {
         let lim = device.limits();
         let output = L::layout(
@@ -175,7 +279,12 @@ impl AtlasGroupBuilder {
                 atlas.texture(),
             )
         }
-        Ok(AtlasGroup::new(atlases))
+        Ok(AtlasGroup::new(
+            atlases,
+            output.entry_map,
+            device,
+            bind_layout,
+        ))
     }
 }
 
@@ -214,6 +323,7 @@ pub struct MaxAtlasSize {
 fn handle_atlas_group_queue<L: AtlasLayouter>(
     mut in_queue: ResMut<AtlasGroupQueue>,
     mut atlas_groups: ResMut<Assets<AtlasGroup>>,
+    bind_layout: Res<AtlasGroupBindGroupLayout>,
     device: Res<DeviceRes>,
     queue: Res<QueueRes>,
 ) {
@@ -221,7 +331,7 @@ fn handle_atlas_group_queue<L: AtlasLayouter>(
         atlas_groups.replace(
             group,
             builder
-                .build::<L>(&device.0, &queue.0)
+                .build::<L>(&device.0, &queue.0, &bind_layout)
                 .expect("error during atlas layout"),
         );
     }
