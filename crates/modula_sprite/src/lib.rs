@@ -1,3 +1,4 @@
+/* old code todo fix
 use bevy_ecs::world::World;
 use modula_asset::{AssetId, AssetWorldExt};
 use modula_render::{Operation, RenderTarget};
@@ -61,3 +62,4 @@ pub struct SpriteBatch {
     size: u64,
     count: u32,
 }
+ */

@@ -14,6 +14,7 @@ use wgpu::{
 use crate::MipMapImage;
 
 mod default_layouter;
+mod render;
 
 pub use default_layouter::*;
 

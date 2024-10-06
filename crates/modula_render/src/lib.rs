@@ -8,6 +8,7 @@ use wgpu::SurfaceError;
 use winit::event::{Event, WindowEvent};
 mod render_target;
 mod sequence;
+pub mod shader;
 
 pub use render_target::*;
 pub use sequence::*;
