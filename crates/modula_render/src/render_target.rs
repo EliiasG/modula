@@ -43,7 +43,8 @@ impl Default for RenderTargetMultisampleConfig {
 
 #[derive(Clone, PartialEq)]
 pub struct RenderTargetColorConfig {
-    // TODO maybe move multisample config to here, as it is only allowed when color is used
+    /// If Some the texture will be multisample with the given sample count
+    pub multisample_config: Option<RenderTargetMultisampleConfig>,
     /// The clear color of the render target
     pub clear_color: Color,
     /// The usages of the main texture, [RENDER_ATTACHMENT](TextureUsages::RENDER_ATTACHMENT) always set
@@ -59,6 +60,7 @@ impl Default for RenderTargetColorConfig {
             clear_color: Color::BLACK,
             usages: TextureUsages::RENDER_ATTACHMENT,
             format: TextureFormat::Rgba8UnormSrgb,
+            multisample_config: None,
         }
     }
 }
@@ -68,7 +70,7 @@ pub struct RenderTargetConfig {
     /// The size of the textures
     pub size: (u32, u32),
     /// The multisample config of the texture, if None the texture will not be multisampled
-    pub multisample_config: Option<RenderTargetMultisampleConfig>,
+
     /// The depth/stencil config of the texture, if None the texture will not have a depth/stencil buffer
     pub depth_stencil_config: Option<RenderTargetDepthStencilConfig>,
     /// The color config of the texture, if None the texture will not have a color buffer
@@ -79,7 +81,6 @@ impl Default for RenderTargetConfig {
     fn default() -> Self {
         RenderTargetConfig {
             size: (1, 1),
-            multisample_config: None,
             depth_stencil_config: Some(Default::default()),
             color_config: Some(Default::default()),
         }
@@ -123,6 +124,15 @@ impl RenderTarget {
             .expect("No current config, this should not happen")
     }
 
+    /// The [RenderTargetMultisampleConfig] of the [RenderTargetColorConfig] if there is a color config with a multisample config
+    pub fn multisample_config(&self) -> Option<&RenderTargetMultisampleConfig> {
+        self.current_config()
+            .color_config
+            .as_ref()?
+            .multisample_config
+            .as_ref()
+    }
+
     /// The planned config of the RenderTarget, if no change is planned this will return None
     pub fn scheduled_config(&self) -> Option<&RenderTargetConfig> {
         self.scheduled_config.as_ref()
@@ -155,7 +165,7 @@ impl RenderTarget {
     /// Sample count of the internal Texture, will be 1 if not multisampled
     #[inline]
     pub fn sample_count(&self) -> u32 {
-        match &self.current_config().multisample_config {
+        match &self.multisample_config() {
             Some(t) => t.sample_count,
             None => 1,
         }
@@ -354,13 +364,12 @@ impl RenderTarget {
         }
 
         if changes.multisample_changed {
-            self.multisampled_texture =
-                self.current_config().multisample_config.as_ref().map(|c| {
-                    // format left same as color
-                    desc.usage = TextureUsages::RENDER_ATTACHMENT;
-                    desc.sample_count = c.sample_count;
-                    TextureWithView::from_texture(device.create_texture(&desc))
-                });
+            self.multisampled_texture = self.multisample_config().map(|c| {
+                // format left same as color
+                desc.usage = TextureUsages::RENDER_ATTACHMENT;
+                desc.sample_count = c.sample_count;
+                TextureWithView::from_texture(device.create_texture(&desc))
+            });
         }
 
         if changes.depth_stencil_changed {
@@ -378,8 +387,6 @@ impl RenderTarget {
         }
     }
 
-    // inline because it's only used in apply
-    #[inline]
     fn changes(&self) -> RenderTargetChanges {
         if self.current_config.is_none() {
             return RenderTargetChanges {
@@ -403,7 +410,7 @@ impl RenderTarget {
                 || different(
                     current.color_config.as_ref(),
                     scheduled.color_config.as_ref(),
-                    |c| c.usages,
+                    |c| (c.usages, c.format),
                 ),
             depth_stencil_changed: resized
                 || different(
@@ -413,7 +420,7 @@ impl RenderTarget {
                 ),
             multisample_changed: resized
                 // only field is sample count
-                || (current.multisample_config != scheduled.multisample_config),
+                || different(current.color_config.as_ref(),scheduled.color_config.as_ref(), |c| &c.multisample_config),
         }
     }
 
